@@ -30,10 +30,6 @@ const PORT = process.env.PORT || 5000;
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
-<<<<<<< HEAD
-    initializeScheduler(); 
-=======
     initializeScheduler();
->>>>>>> 4cac4c59b5f20886b7cd393b6d072e5873409382
   });
 });
