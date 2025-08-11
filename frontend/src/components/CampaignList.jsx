@@ -10,11 +10,26 @@ function CampaignList() {
   const [canScrollRight, setCanScrollRight] = useState(false);
   const scrollContainerRef = useRef(null);
 
+  // Helper function to format date in IST
+  const formatDateIST = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-IN', { 
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }) + ' IST';
+  };
+
   useEffect(() => {
     const fetchCampaigns = async () => {
       try {
         setLoading(true);
-        const response = await axios.get('http://localhost:5000/api/campaigns');
+        const response = await axios.get('https://email-campaign-scheduler-1.onrender.com/api/campaigns');
         setCampaigns(response.data);
         setError('');
       } catch (err) {
@@ -130,8 +145,10 @@ function CampaignList() {
               
               <div className="campaign-details">
                 <div className="detail-item">
-                  <strong>Scheduled Time</strong>
-                  <div>{new Date(campaign.scheduledTime).toLocaleString()}</div>
+                  <strong>Scheduled Time (IST)</strong>
+                  <div className="scheduled-time-ist">
+                    {formatDateIST(campaign.scheduledTime)}
+                  </div>
                 </div>
                 
                 <div className="detail-item">
@@ -167,6 +184,11 @@ function CampaignList() {
                         <span className={`log-status log-status-${log.status}`}>
                           {log.status}
                         </span>
+                        {log.sentAt && (
+                          <span className="log-time">
+                            {formatDateIST(log.sentAt)}
+                          </span>
+                        )}
                         {log.error && (
                           <span className="log-error">({log.error})</span>
                         )}
