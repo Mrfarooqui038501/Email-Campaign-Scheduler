@@ -9,7 +9,11 @@ const scheduleEmail = (campaign) => {
   try {
     // Parse the scheduled time - treat the input as IST
     const scheduledDate = new Date(scheduledTime);
-    if (isNaN(scheduledDate.getTime())) throw new Error('Invalid scheduledTime');
+    if (isNaN(scheduledDate.getTime())) {
+      console.error(`Invalid scheduledTime for campaign ${_id}: ${scheduledTime}`);
+      Campaign.findByIdAndUpdate(_id, { status: 'failed' }).catch(console.error);
+      return;
+    }
 
     // Get current time
     const now = new Date();
@@ -78,7 +82,9 @@ const scheduleEmail = (campaign) => {
 
     console.log(`- Cron expression: ${cronExpression}`);
 
-    if (!cron.validate(cronExpression)) throw new Error(`Invalid cronExpr=${cronExpression}`);
+    if (!cron.validate(cronExpression)) {
+      throw new Error(`Invalid cron expression: ${cronExpression}`);
+    }
     
     const job = cron.schedule(cronExpression, async () => {
       try {
@@ -89,7 +95,9 @@ const scheduleEmail = (campaign) => {
         console.error(`Campaign ${_id} failed:`, err);
         await Campaign.findByIdAndUpdate(_id, { status: 'failed' });
       }
-      if (scheduledJobs.has(_id.toString())) scheduledJobs.get(_id.toString()).destroy();
+      if (scheduledJobs.has(_id.toString())) {
+        scheduledJobs.get(_id.toString()).destroy();
+      }
       scheduledJobs.delete(_id.toString());
     }, { 
       scheduled: true, 
@@ -124,7 +132,19 @@ const initializeScheduler = async () => {
   }
 };
 
+const cancelScheduledJob = (campaignId) => {
+  const jobId = campaignId.toString();
+  if (scheduledJobs.has(jobId)) {
+    scheduledJobs.get(jobId).destroy();
+    scheduledJobs.delete(jobId);
+    console.log(`Cancelled scheduled job for campaign ${campaignId}`);
+    return true;
+  }
+  return false;
+};
+
 module.exports = { 
   scheduleEmail, 
-  initializeScheduler
+  initializeScheduler,
+  cancelScheduledJob
 };
