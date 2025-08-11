@@ -1,62 +1,215 @@
-const cron = require('node-cron');
-const Campaign = require('../models/Campaign');
-const { sendEmail } = require('./emailService');
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import '../App.css'; 
 
-const scheduledJobs = new Map();
+function CampaignList() {
+  const [campaigns, setCampaigns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const scrollContainerRef = useRef(null);
 
+  // Helper function to format date in IST
+  const formatDateIST = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-IN', { 
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }) + ' IST';
+  };
 
-const scheduleEmail = (campaign) => {
-  const { _id, scheduledTime } = campaign;
-  try {
-    const date = new Date(scheduledTime);
-    if (isNaN(date.getTime())) throw new Error('Invalid scheduledTime');
-
- 
-    if (date.getTime() < Date.now() - 5000) {
-      Campaign.findByIdAndUpdate(_id, { status: 'failed' }).catch(console.error);
-      return;
-    }
-    const delay = date.getTime() - Date.now();
-    if (delay <= 120000) { // < 2 min
-      const timeoutId = setTimeout(async () => {
-        try {
-          await sendEmail(campaign);
-          await Campaign.findByIdAndUpdate(_id, { status: 'sent' });
-        } catch (err) {
-          await Campaign.findByIdAndUpdate(_id, { status: 'failed' });
-        }
-        scheduledJobs.delete(_id.toString());
-      }, delay);
-      scheduledJobs.set(_id.toString(), { type: 'timeout', id: timeoutId, destroy: () => clearTimeout(timeoutId) });
-      return;
-    }
-    
-    const cronExpression = `${date.getMinutes()} ${date.getHours()} ${date.getDate()} ${date.getMonth() + 1} *`;
-
-    if (!cron.validate(cronExpression)) throw new Error(`Invalid cronExpr=${cronExpression}`);
-    const job = cron.schedule(cronExpression, async () => {
+  useEffect(() => {
+    const fetchCampaigns = async () => {
       try {
-        await sendEmail(campaign);
-        await Campaign.findByIdAndUpdate(_id, { status: 'sent' });
+        setLoading(true);
+        const response = await axios.get('https://email-campaign-scheduler-1.onrender.com/api/campaigns');
+        setCampaigns(response.data);
+        setError('');
       } catch (err) {
-        await Campaign.findByIdAndUpdate(_id, { status: 'failed' });
+        console.error('Error fetching campaigns:', err);
+        setError('Failed to load campaigns. Please ensure the backend server is running.');
+      } finally {
+        setLoading(false);
       }
-      if (scheduledJobs.has(_id.toString())) scheduledJobs.get(_id.toString()).destroy();
-      scheduledJobs.delete(_id.toString());
-    }, { scheduled: true, timezone: 'UTC', });
-    scheduledJobs.set(_id.toString(), { type: 'cron', job, destroy: () => job.destroy() });
-  } catch (err) {
-    console.error(`Error scheduling campaign ${_id}:`, err);
-    Campaign.findByIdAndUpdate(_id, { status: 'failed' }).catch(console.error);
-  }
-};
+    };
+    fetchCampaigns();
+  }, []);
 
+  // Check scroll position and update button states
+  const checkScrollButtons = () => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      setCanScrollLeft(container.scrollLeft > 0);
+      setCanScrollRight(
+        container.scrollLeft < container.scrollWidth - container.clientWidth
+      );
+    }
+  };
 
-const initializeScheduler = async () => {
-  try {
-    const pending = await Campaign.find({ status: 'pending' });
-    pending.forEach(scheduleEmail);
-  } catch (e) { console.error('initializeScheduler', e); }
-};
+  // Update scroll buttons when campaigns load
+  useEffect(() => {
+    if (campaigns.length > 0) {
+      setTimeout(() => {
+        checkScrollButtons();
+      }, 100);
+    }
+  }, [campaigns]);
 
-module.exports = { scheduleEmail, initializeScheduler };
+  const scrollLeft = () => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollBy({ left: -350, behavior: 'smooth' });
+      setTimeout(checkScrollButtons, 300);
+    }
+  };
+
+  const scrollRight = () => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollBy({ left: 350, behavior: 'smooth' });
+      setTimeout(checkScrollButtons, 300);
+    }
+  };
+
+  return (
+    <div className="campaign-list-container">
+      <div className="campaign-logs-header">
+        <h2 className="campaign-list-title">Campaigns</h2>
+        {!loading && campaigns.length > 0 && (
+          <div className="campaign-count-badge">
+            {campaigns.length} Campaign{campaigns.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+      
+      {loading && <p className="status-message">Loading campaigns...</p>}
+      {error && <p className="status-message error-message">{error}</p>}
+      
+      {!loading && campaigns.length === 0 && !error && (
+        <div className="no-campaigns-message">
+          <div className="empty-state">
+            <div className="empty-icon">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+              </svg>
+            </div>
+            <h3>No Campaigns Yet</h3>
+            <p>Create your first email campaign to get started!</p>
+          </div>
+        </div>
+      )}
+      
+      <div className="campaign-cards-container">
+        {campaigns.length > 0 && (
+          <>
+            <button
+              className={`scroll-btn scroll-btn-left ${!canScrollLeft ? 'disabled' : ''}`}
+              onClick={scrollLeft}
+              disabled={!canScrollLeft}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+              </svg>
+            </button>
+            <button
+              className={`scroll-btn scroll-btn-right ${!canScrollRight ? 'disabled' : ''}`}
+              onClick={scrollRight}
+              disabled={!canScrollRight}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+              </svg>
+            </button>
+          </>
+        )}
+        <div 
+          className="campaign-cards-row"
+          ref={scrollContainerRef}
+          onScroll={checkScrollButtons}
+        >
+          {campaigns.map((campaign) => (
+            <div key={campaign._id} className="campaign-card">
+              <div className="campaign-card-header">
+                <h3>{campaign.title}</h3>
+                <div className={`status-badge status-${campaign.status}`}>
+                  {campaign.status}
+                </div>
+              </div>
+              
+              <div className="campaign-details">
+                <div className="detail-item">
+                  <strong>Scheduled Time (IST)</strong>
+                  <div className="scheduled-time-ist">
+                    {formatDateIST(campaign.scheduledTime)}
+                  </div>
+                </div>
+                
+                <div className="detail-item">
+                  <strong>Recipients</strong>
+                  <div className="recipients-list">
+                    {campaign.recipients.slice(0, 3).map((recipient, index) => (
+                      <span key={index} className="recipient-tag">
+                        {recipient}
+                      </span>
+                    ))}
+                    {campaign.recipients.length > 3 && (
+                      <span className="recipient-tag more">
+                        +{campaign.recipients.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="logs-block">
+                <div className="logs-header">
+                  <strong>Email Logs</strong>
+                  {campaign.logs && campaign.logs.length > 0 && (
+                    <span className="logs-count">{campaign.logs.length}</span>
+                  )}
+                </div>
+                
+                {campaign.logs && campaign.logs.length > 0 ? (
+                  <ul className="logs-list">
+                    {campaign.logs.slice(0, 4).map((log, index) => (
+                      <li key={index} className="log-item">
+                        <span className="log-recipient">{log.recipient}</span>
+                        <span className={`log-status log-status-${log.status}`}>
+                          {log.status}
+                        </span>
+                        {log.sentAt && (
+                          <span className="log-time">
+                            {formatDateIST(log.sentAt)}
+                          </span>
+                        )}
+                        {log.error && (
+                          <span className="log-error">({log.error})</span>
+                        )}
+                      </li>
+                    ))}
+                    {campaign.logs.length > 4 && (
+                      <li className="log-item more-logs">
+                        +{campaign.logs.length - 4} more logs
+                      </li>
+                    )}
+                  </ul>
+                ) : (
+                  <div className="no-logs">No logs available yet.</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default CampaignList;
